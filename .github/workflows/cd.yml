@@ -1,4 +1,4 @@
-name: CD - Build & Deploy
+name: CD
 
 on:
   push:
@@ -7,13 +7,34 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
-    
+    environment: labo05
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Build and deploy
-      run: |
-        docker compose down || true
-        docker compose up --build -d
-        sleep 5
-        curl http://localhost:5000/health-check || exit 1
+      - name: Pre-checkout cleanup (Fix Permissions)
+        run: |
+          # Use sudo to delete root-owned pycache or log files left by containers
+          sudo rm -rf ${{ github.workspace }}/* || true
+
+      - name: Checkout depot
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Creates .env file
+        run: |
+          cat > .env << EOF
+          FLASK_PORT=${{ secrets.FLASK_PORT }}
+          API_GATEWAY_URL=${{ secrets.API_GATEWAY_URL }}
+          EOF
+
+      - name: Creates docker network
+        run: docker network create labo05-network || true
+
+      - name: Deploys with docker-compose
+        run: |
+          docker-compose down -v
+          docker-compose build
+          docker-compose up -d 
+
+      - name: Verify that containers are running
+        run: docker ps
