@@ -4,6 +4,7 @@ SPDX - License - Identifier: LGPL - 3.0 - or -later
 Auteurs : Gabriel C. Ullmann, Fabio Petrillo, 2025
 """
 import requests
+import config
 from handlers.handler import Handler
 from order_saga_state import OrderSagaState
 
@@ -20,18 +21,29 @@ class CreatePaymentHandler(Handler):
     def run(self):
         """Call payment microservice to generate payment transaction"""
         try:
-            # TODO: effectuer une requête à /orders pour obtenir le total_amount de la commande (que sera utilisé pour démander la transaction de paiement)
             """
             GET my-api-gateway-address/order/{id} ...
             """
-
-            # TODO: effectuer une requête à /payments pour créer une transaction de paiement
+            response = requests.get(f'{config.API_GATEWAY_URL}/store-manager-api/orders/{self.order_id}',
+                headers={'Content-Type': 'application/json'}
+            )
+            data = response.json()
+            user_id = data['user_id'] if data else 0
+            total_amount = data['total_amount'] if data else 0
+            
             """
             POST my-api-gateway-address/payments ...
             json={ voir collection Postman pour en savoir plus ... }
             """
-            response_ok = True
-            if response_ok:
+            response = requests.post(f'{config.API_GATEWAY_URL}/payments-api/payments',
+                json={
+                    "user_id": user_id,
+                    "order_id": self.order_id,
+                    "total_amount": total_amount
+                },
+                headers={'Content-Type': 'application/json'}
+            )
+            if response.ok:
                 self.logger.debug("Transition d'état: CreatePayment -> PAYMENT_CREATED")
                 return OrderSagaState.PAYMENT_CREATED
             else:
@@ -42,6 +54,12 @@ class CreatePaymentHandler(Handler):
         
     def rollback(self):
         """ Call StoreManager to restore stock quantities if payment transaction creation fails """
-        # TODO: remettre en stock tous les articles qui avaient été retirés du stock (dans self.order_data)
+        response = requests.put(f'{config.API_GATEWAY_URL}/store-manager-api/orders',
+                json={
+                    "items": self.order_data['items'],
+                    "operation": "+"
+                },
+                headers={'Content-Type': 'application/json'}
+            )
         self.logger.debug("Transition d'état: CreatePaymentFailure -> STOCK_INCREASED")
         return OrderSagaState.STOCK_INCREASED
